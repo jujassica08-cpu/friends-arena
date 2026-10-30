@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Friends Arena</title>
+<style>
+:root{--ink:#172033;--muted:#667085;--purple:#6957d9;--bg:#f4f5fb;--line:#e5e7f0}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top left,#e9e4ff,transparent 42%),var(--bg);font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:var(--ink);min-height:100vh}
+main{width:min(760px,92vw);margin:35px auto}.brand{font-weight:900;letter-spacing:.08em;color:var(--purple);font-size:13px}.panel{background:white;border:1px solid var(--line);border-radius:24px;padding:clamp(20px,5vw,36px);box-shadow:0 18px 55px #29345b12;margin-top:18px}
+h1{font-size:clamp(32px,7vw,54px);line-height:1.02;margin:10px 0}h2{margin:0 0 12px}p{color:var(--muted);line-height:1.55}.row{display:flex;gap:10px;flex-wrap:wrap}.row>*{flex:1;min-width:130px}
+input{width:100%;padding:14px 15px;border:1px solid var(--line);border-radius:13px;font:inherit;margin:7px 0 12px}
+button{border:0;border-radius:13px;background:var(--purple);color:white;padding:14px 18px;font:700 15px inherit;cursor:pointer;min-height:48px}button.secondary{background:#efedff;color:var(--purple)}button:disabled{opacity:.45;cursor:not-allowed}
+.hidden{display:none!important}.tag{display:inline-block;background:#f0efff;color:#5b4bc4;padding:7px 11px;border-radius:99px;font-size:13px;font-weight:700}.players{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:9px;margin:18px 0}.player{padding:12px;background:#f7f7fc;border-radius:12px;font-weight:650}.code{font-size:30px;letter-spacing:.2em;font-weight:900;color:var(--purple)}
+.answers{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:20px 0}.answers button{background:#f0efff;color:#322a73;text-align:left}.answers button:disabled{opacity:.6}.answers button.chosen{outline:3px solid var(--purple)}.status{min-height:24px;font-weight:700;color:var(--purple)}.score{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)}
+@media(max-width:480px){.answers{grid-template-columns:1fr}.panel{border-radius:18px}}
+</style>
+</head>
+<body><main>
+<div class="brand">✦ FRIENDS ARENA</div>
+<section id="home" class="panel">
+<span class="tag">MULTIPLAYER PARTY QUIZ</span><h1>Same room.<br>Big brain energy.</h1>
+<p>Invite your friends, answer quick questions and race up the leaderboard. No account or downloads needed.</p>
+<label for="name">Your nickname</label><input id="name" maxlength="16" placeholder="e.g. StarPlayer">
+<div class="row"><button id="create">Create a room</button><button id="showJoin" class="secondary">Join with a code</button></div>
+<div id="joinArea" class="hidden"><input id="roomCode" maxlength="4" placeholder="4-character room code"><button id="join">Join room</button></div>
+<div id="error" class="status" role="status"></div>
+</section>
+<section id="lobby" class="panel hidden">
+<span class="tag">WAITING ROOM</span><h2>Invite your crew</h2><p>Share this room code with your friends:</p><div id="code" class="code"></div>
+<p id="playerCount"></p><div id="players" class="players"></div>
+<p>How to play: 5 quick questions. Choose an answer before the 15-second timer ends. Correct answers earn 10 points.</p>
+<button id="start" class="hidden">Start game</button><div id="wait" class="status">Waiting for the host to start…</div>
+</section>
+<section id="game" class="panel hidden">
+<div class="row"><span class="tag" id="round">ROUND 1 / 5</span><span class="tag" id="timer">15 seconds</span></div>
+<h2 id="question" style="margin-top:20px"></h2><div id="answers" class="answers"></div><div id="feedback" class="status" aria-live="polite"></div>
+<h3>Live scores</h3><div id="scores"></div>
+</section>
+<section id="finished" class="panel hidden"><span class="tag">GAME COMPLETE</span><h1>Great game!</h1><p>Final leaderboard</p><div id="finalScores"></div><button onclick="location.reload()">Play another</button></section>
+</main>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket=io();let roomCode="",isHost=false,answered=false,tick=null,seconds=15;
+const $=id=>document.getElementById(id);
+function show(id){["home","lobby","game","finished"].forEach(x=>$(x).classList.toggle("hidden",x!==id))}
+function nickname(){return $("name").value.trim()||"Player"}
+function fail(msg){$("error").textContent=msg}
+$("showJoin").onclick=()=>$("joinArea").classList.toggle("hidden");
+$("create").onclick=()=>{fail("");socket.emit("room:create",{name:nickname()},r=>{if(!r.ok)return fail(r.error);roomCode=r.code;isHost=true;show("lobby")})};
+$("join").onclick=()=>{fail("");const c=$("roomCode").value.trim().toUpperCase();socket.emit("room:join",{name:nickname(),code:c},r=>{if(!r.ok)return fail(r.error);roomCode=r.code;isHost=false;show("lobby")})};
+$("roomCode").addEventListener("input",e=>e.target.value=e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,""));
+$("start").onclick=()=>socket.emit("game:start");
+socket.on("room:update",r=>{
+ roomCode=r.code;$("code").textContent=r.code;$("playerCount").textContent=`${r.players.length} / 12 players`;
+ $("players").innerHTML=r.players.map(p=>`<div class="player">${escapeHtml(p.name)}${p.id===r.hostId?" 👑":""}</div>`).join("");
+ $("start").classList.toggle("hidden",socket.id!==r.hostId||r.state!=="lobby"||r.players.length<2);
+ $("wait").textContent=r.players.length<2?"Waiting for at least one friend to join…":"Ready when you are, host!";
+ if(r.state==="playing"&&r.question){show("game");$("round").textContent=`ROUND ${r.round} / ${r.totalRounds}`;$("question").textContent=r.question.q;
+ if(!$("answers").dataset.round||$("answers").dataset.round!==String(r.round)){answered=false;$("answers").dataset.round=String(r.round);$("feedback").textContent="";$("answers").innerHTML=r.question.a.map((a,i)=>`<button data-choice="${i}">${String.fromCharCode(65+i)}. ${escapeHtml(a)}</button>`).join("");$("answers").querySelectorAll("button").forEach(b=>b.onclick=()=>{if(answered)return;answered=true;b.classList.add("chosen");$("answers").querySelectorAll("button").forEach(x=>x.disabled=true);socket.emit("answer:submit",{choice:Number(b.dataset.choice)});$("feedback").textContent="Answer locked in!"})}}
+ if(r.state==="finished"){clearInterval(tick);show("finished");renderScores(r.players,"finalScores")}
+ if(r.state==="playing")renderScores(r.players,"scores");
+});
+socket.on("answer:result",r=>$("feedback").textContent=r.correct?"Correct! +10 points 🎉":"Not quite — next one!";
+socket.on("round:reveal",r=>{$("feedback").textContent=`The answer was: ${r.answer}`;$("answers").querySelectorAll("button").forEach((b,i)=>{b.disabled=true;if(i===r.correct)b.classList.add("chosen")})});
+socket.on("notice",m=>{$("wait").textContent=m});
+function renderScores(players,id){$(id).innerHTML=[...players].sort((a,b)=>b.score-a.score).map((p,i)=>`<div class="score"><span>${i+1}. ${escapeHtml(p.name)}</span><strong>${p.score}</strong></div>`).join("")}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+</script></body></html>
