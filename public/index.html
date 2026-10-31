@@ -60,7 +60,7 @@ socket.on("room:update",r=>{
  if(r.state==="finished"){clearInterval(tick);show("finished");renderScores(r.players,"finalScores")}
  if(r.state==="playing")renderScores(r.players,"scores");
 });
-socket.on("answer:result",r=>$("feedback").textContent=r.correct?"Correct! +10 points 🎉":"Not quite — next one!";
+socket.on("answer:result",r=>$("feedback").textContent=r.correct?"Correct! +10 points 🎉":"Not quite — next one!");
 socket.on("round:reveal",r=>{$("feedback").textContent=`The answer was: ${r.answer}`;$("answers").querySelectorAll("button").forEach((b,i)=>{b.disabled=true;if(i===r.correct)b.classList.add("chosen")})});
 socket.on("notice",m=>{$("wait").textContent=m});
 function renderScores(players,id){$(id).innerHTML=[...players].sort((a,b)=>b.score-a.score).map((p,i)=>`<div class="score"><span>${i+1}. ${escapeHtml(p.name)}</span><strong>${p.score}</strong></div>`).join("")}
